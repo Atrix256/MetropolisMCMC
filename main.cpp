@@ -3,6 +3,21 @@
 #include <random>
 #include <vector>
 
+inline float Lerp(float a, float b, float t)
+{
+    return a * (1.0f - t) + b * t;
+}
+
+inline float Clamp(float v, float min, float max)
+{
+    if (v <= min)
+        return min;
+    else if (v >= max)
+        return max;
+    else
+        return v;
+}
+
 class Histogram
 {
 public:
@@ -32,31 +47,33 @@ public:
 };
 
 template <typename FUNCTION>
-void MetropolisMCMC(const FUNCTION& function, float xmin, float xmax, float xstart, size_t sampleCount)
+void MetropolisMCMC(const FUNCTION& function, float xmin, float xmax, float xstart, float stepSizeSigma, size_t sampleCount)
 {
     // are we drawing random numbers or getting expected value (integrating?). Maybe both? i dunno...
 
     Histogram histogram(xmin, xmax, 100);
 
     FILE* file = nullptr;
-    fopen_s(&file, "out.csv", "w+t");
+    fopen_s(&file, "out/out.csv", "w+t");
 
     std::random_device rd;
     std::seed_seq fullSeed{ rd(), rd(), rd(), rd(), rd(), rd(), rd(), rd() };
     std::mt19937 rng(fullSeed);
 
-    std::normal_distribution<float> normalDist(0.0f, 1.0f);
+    std::normal_distribution<float> normalDist(0.0f, stepSizeSigma);
     std::uniform_real_distribution<float> uniformDist(0.0f, 1.0f);
 
     float xcurrent = xstart;
     float ycurrent = function(xstart);
+    float expectedValue = ycurrent;
 
-    fprintf(file, "\"%zu\",\"%f\",\"%f\"\n", size_t(0), xcurrent, ycurrent);
+    fprintf(file, "\"index\",\"x\",\"y\",\"expected value\"\n");
+    fprintf(file, "\"%zu\",\"%f\",\"%f\",\"%f\"\n", size_t(0), xcurrent, ycurrent, expectedValue);
     histogram.AddValue(xcurrent);
 
     for (size_t sampleIndex = 1; sampleIndex < sampleCount; ++sampleIndex)
     {
-        float xnext = xstart + normalDist(rng);
+        float xnext = Clamp(xstart + normalDist(rng), xmin, xmax);
         float ynext = function(xnext);
 
         // take the new x if y next > ycurrent, or with some probability based on how much worse it is.
@@ -67,16 +84,18 @@ void MetropolisMCMC(const FUNCTION& function, float xmin, float xmax, float xsta
             ycurrent = ynext;
         }
 
-        fprintf(file, "\"%zu\",\"%f\",\"%f\"\n", sampleIndex, xcurrent, ycurrent);
+        expectedValue = Lerp(expectedValue, ycurrent, 1.0f / float(sampleIndex));
+
+        fprintf(file, "\"%zu\",\"%f\",\"%f\",\"%f\"\n", sampleIndex, xcurrent, ycurrent, expectedValue);
         histogram.AddValue(xcurrent);
     }
 
     // TODO: spit out values into a CSV and do a histogram with it?
     fclose(file);
 
-    fopen_s(&file, "histogram.csv", "w+t");
+    fopen_s(&file, "out/histogram.csv", "w+t");
+    fprintf(file, "\"Bucket Index\",\"Bucket X\",\"Actual Y\",\"Count\",\"Percentage\",\n");
 
-    // TODO: put files in an "out" folder
     for (size_t index = 0; index < histogram.m_numBuckets; ++index)
     {
         float percent = float(index) / float(histogram.m_numBuckets - 1);
@@ -91,16 +110,13 @@ void MetropolisMCMC(const FUNCTION& function, float xmin, float xmax, float xsta
 
 float Sin(float x)
 {
-    if (x < 0.0f || x > 1.0f)
-        return 0.0f;
-    else
-        return sinf(x);
+    return sinf(x);
 }
 
 
 int main(int argc, char** argv)
 {
-    MetropolisMCMC(Sin, 0.0f, 1.0f, 0.5f, 100000);
+    MetropolisMCMC(Sin, 0.0f, 1.0f, 0.5f, 1.0f, 100000);
 
     return 0;
 }
@@ -108,6 +124,11 @@ int main(int argc, char** argv)
 /*
 
 TODO:
+
+* Clamp to range instead of putting f in function.
+* Also make smaller step size! Maybe be based on range?
+* average y value is the expected value.
+ ? i did this one but it doesn't seem to be correct! (or is it?)
 
 * in the histogram, the actual calculated y's sum up to BUCKET_COUNT * 0.45970 (integration of sin(x) from 0 to 1).
  * the counts sum up to sample count, which can be normalized to a percentage, but if we are looking for a mean, what do we do?
