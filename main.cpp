@@ -73,7 +73,7 @@ void MetropolisMCMC(const FUNCTION& function, float xmin, float xmax, float xsta
 
     for (size_t sampleIndex = 1; sampleIndex < sampleCount; ++sampleIndex)
     {
-        float xnext = Clamp(xstart + normalDist(rng), xmin, xmax);
+        float xnext = Clamp(xcurrent + normalDist(rng), xmin, xmax);
         float ynext = function(xnext);
 
         // take the new x if y next > ycurrent, or with some probability based on how much worse it is.
@@ -116,7 +116,7 @@ float Sin(float x)
 
 int main(int argc, char** argv)
 {
-    MetropolisMCMC(Sin, 0.0f, 1.0f, 0.5f, 1.0f, 100000);
+    MetropolisMCMC(Sin, 0.0f, 1.0f, 0.5f, 0.1f, 100000);
 
     return 0;
 }
