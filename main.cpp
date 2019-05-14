@@ -78,6 +78,10 @@ void MetropolisMCMC(const FUNCTION& function, float xstart, float stepSizeSigma,
 
             // take the new sample if ynext > ycurrent (it's more probable), or with a probability based on how much less probable it is.
             float A = ynext / ycurrent;
+
+            // TODO: this doesn't seem right... something seems off, even though this gives the right answer.
+            A = ynext > 0.0f ? 1.0f : 0.0f;
+
             if (uniformDist(rng) < A)
             {
                 xcurrent = xnext;
@@ -161,7 +165,7 @@ void MetropolisMCMC(const FUNCTION& function, float xstart, float stepSizeSigma,
     }
 
     // show results
-    printf("expected value = %0.2f\nIntegral = %0.2f from %0.2f to %0.2f\n", expectedValue, integral, xmin, xmax);
+    printf("%zu samples taken\nexpected value = %0.2f\nIntegral = %0.2f from %0.2f to %0.2f\n", sampleCount, expectedValue, integral, xmin, xmax);
 }
 
 float Sin(float x)
@@ -200,6 +204,9 @@ int main(int argc, char** argv)
 /*
 
 TODO:
+
+* your integral is 0.2 instead of 2.0. Why??
+ * also i can't understand why this works... the random walk is pretty deterministic.  Maybe is it because the p(x) needs to account for taking a gaussian step?
 
 * make a wrapper function that will clamp a function by returning 0 when out of bounds.
  * this is for integrating functions between specific values
