@@ -76,7 +76,7 @@ void MetropolisMCMC(const FUNCTION& function, float xstart, float stepSizeSigma,
             float xnext = xcurrent + normalDist(rng);
             float ynext = std::max(function(xnext), 0.0f);
 
-            // take the new sample if y next > ycurrent, or with some probability based on how much worse it is.
+            // take the new sample if ynext > ycurrent (it's more probable), or with a probability based on how much less probable it is.
             float A = ynext / ycurrent;
             if (uniformDist(rng) < A)
             {
@@ -103,9 +103,10 @@ void MetropolisMCMC(const FUNCTION& function, float xstart, float stepSizeSigma,
         ymax = std::max(ymax, s[1]);
     }
 
-    // Write out the sample data, while also calculating the expected value and integral over time.
-    float expectedValue = 0.0f;
+    // Write out the sample data, while also calculating the expected value and integral at each step.
+    // The final values of integral and expected value should be taken as the most accurate.
     float integral = 0.0f;
+    float expectedValue = 0.0f;
     {
         FILE* file = nullptr;
         fopen_s(&file, "out/samples.csv", "w+t");
@@ -113,10 +114,10 @@ void MetropolisMCMC(const FUNCTION& function, float xstart, float stepSizeSigma,
 
         for (size_t sampleIndex = 0; sampleIndex < sampleCount; ++sampleIndex)
         {
-            expectedValue = Lerp(expectedValue, samples[sampleIndex][0], 1.0f / float(sampleIndex + 1));
-
             float value = samples[sampleIndex][1] / (xmax - xmin); // f(x) / p(x)
             integral = Lerp(integral, value, 1.0f / float(sampleIndex + 1)); // incrementally averaging: https://blog.demofox.org/2016/08/23/incremental-averaging/
+
+            expectedValue = Lerp(expectedValue, samples[sampleIndex][0], 1.0f / float(sampleIndex + 1));  // more incremental averaging
 
             fprintf(file, "\"%zu\",\"%f\",\"%f\",\"%f\",\"%f\"\n", sampleIndex, samples[sampleIndex][0], samples[sampleIndex][1], expectedValue, integral);
         }
