@@ -3,6 +3,7 @@
 #include <random>
 #include <vector>
 #include <array>
+#include <conio.h>
 
 static const float c_pi = 3.14159265359f;
 
@@ -48,83 +49,90 @@ public:
 };
 
 template <typename FUNCTION>
-void MetropolisMCMC(const FUNCTION& function, float xstart, float stepSizeSigma, size_t sampleCount)
+void MetropolisMCMC(const FUNCTION& function, float xstart, float stepSizeSigma, size_t sampleCount, size_t histogramBucketCount)
 {
-    std::random_device rd;
-    std::seed_seq fullSeed{ rd(), rd(), rd(), rd(), rd(), rd(), rd(), rd() };
-    std::mt19937 rng(fullSeed);
-
-    std::normal_distribution<float> normalDist(0.0f, stepSizeSigma);
-    std::uniform_real_distribution<float> uniformDist(0.0f, 1.0f);
-
-    FILE* file = nullptr;
-
-    // run our mcmc code, generate and write out the data
+    // run our mcmc code to generate sample points
     std::vector<std::array<float, 2>> samples(sampleCount);
-    float ymin = 0.0f;
-    float ymax = 0.0f;
-    float expectedValue = 0.0f;
     {
-        fopen_s(&file, "out/out.csv", "w+t");
+        std::random_device rd;
+        std::seed_seq fullSeed{ rd(), rd(), rd(), rd(), rd(), rd(), rd(), rd() };
+        std::mt19937 rng(fullSeed);
 
+        std::normal_distribution<float> normalDist(0.0f, stepSizeSigma);
+        std::uniform_real_distribution<float> uniformDist(0.0f, 1.0f);
+
+        // make the starting sample
         float xcurrent = xstart;
-        float ycurrent = function(xstart);
-        expectedValue = ycurrent;
+        float ycurrent = std::max(function(xstart), 0.0f);
 
-        fprintf(file, "\"index\",\"x\",\"y\",\"expected value\"\n");
-        fprintf(file, "\"%zu\",\"%f\",\"%f\",\"%f\"\n", size_t(0), xcurrent, ycurrent, expectedValue);
-
-        ymin = ycurrent;
-        ymax = ycurrent;
-
+        // store the first sample, as the place we start at
         samples[0][0] = xcurrent;
         samples[0][1] = ycurrent;
 
+        // do a random walk
         for (size_t sampleIndex = 1; sampleIndex < sampleCount; ++sampleIndex)
         {
+            // get a proposed next sample for our random walk
             float xnext = xcurrent + normalDist(rng);
-            float ynext = function(xnext);
+            float ynext = std::max(function(xnext), 0.0f);
 
-            // take the new x if y next > ycurrent, or with some probability based on how much worse it is.
+            // take the new sample if y next > ycurrent, or with some probability based on how much worse it is.
             float A = ynext / ycurrent;
             if (uniformDist(rng) < A)
             {
                 xcurrent = xnext;
                 ycurrent = ynext;
-
-                if (ycurrent < ymin)
-                    ymin = ycurrent;
-
-                if (ycurrent > ymax)
-                    ymax = ycurrent;
             }
 
-            expectedValue = Lerp(expectedValue, ycurrent, 1.0f / float(sampleIndex + 1));
-
+            // store the current sample, whether we took the new sample or not
             samples[sampleIndex][0] = xcurrent;
             samples[sampleIndex][1] = ycurrent;
-
-            fprintf(file, "\"%zu\",\"%f\",\"%f\",\"%f\"\n", sampleIndex, xcurrent, ycurrent, expectedValue);
         }
-        fclose(file);
     }
 
-    // make a histogram
+    // calculate the min and max x and y of the samples
     float xmin = samples[0][0];
     float xmax = samples[0][0];
+    float ymin = samples[0][1];
+    float ymax = samples[0][1];
     for (const std::array<float, 2>& s : samples)
     {
         xmin = std::min(xmin, s[0]);
         xmax = std::max(xmax, s[0]);
+        ymin = std::min(ymin, s[1]);
+        ymax = std::max(ymax, s[1]);
     }
-    Histogram histogram(xmin, xmax, 100);
+
+    // Write out the sample data, while also calculating the expected value and integral over time.
+    float expectedValue = 0.0f;
+    float integral = 0.0f;
+    {
+        FILE* file = nullptr;
+        fopen_s(&file, "out/samples.csv", "w+t");
+        fprintf(file, "\"index\",\"x\",\"y\",\"expected value\",\"integral\"\n");
+
+        for (size_t sampleIndex = 0; sampleIndex < sampleCount; ++sampleIndex)
+        {
+            expectedValue = Lerp(expectedValue, samples[sampleIndex][0], 1.0f / float(sampleIndex + 1));
+
+            float value = samples[sampleIndex][1] / (xmax - xmin); // f(x) / p(x)
+            integral = Lerp(integral, value, 1.0f / float(sampleIndex + 1)); // incrementally averaging: https://blog.demofox.org/2016/08/23/incremental-averaging/
+
+            fprintf(file, "\"%zu\",\"%f\",\"%f\",\"%f\",\"%f\"\n", sampleIndex, samples[sampleIndex][0], samples[sampleIndex][1], expectedValue, integral);
+        }
+
+        fclose(file);
+    }
+
+    // Make a histogram of the x axis to show that they follow the shape of the function.
+    // That is, the function was used as a PDF, which described the probabilities of each possible value.
+    Histogram histogram(xmin, xmax, histogramBucketCount);
     for (const std::array<float, 2>& s : samples)
         histogram.AddValue(s[0]);
 
-    float definiteIntegral = expectedValue * (xmax-xmin);
-
     // write out a histogram file
     {
+        FILE* file = nullptr;
         fopen_s(&file, "out/histogram.csv", "w+t");
         fprintf(file, "\"Bucket Index\",\"Bucket X\",\"Actual Y\",\"Normalized Y\",\"Count\",\"Percentage\",\n");
 
@@ -134,7 +142,7 @@ void MetropolisMCMC(const FUNCTION& function, float xstart, float stepSizeSigma,
         {
             float percent = (float(index) + 0.5f) / float(histogram.m_numBuckets - 1);
             float x = xmin + percent * (xmax - xmin);
-            float y = function(x);
+            float y = std::max(function(x), 0.0f);
             normalizationConstant += y;
         }
 
@@ -143,13 +151,16 @@ void MetropolisMCMC(const FUNCTION& function, float xstart, float stepSizeSigma,
         {
             float percent = (float(index) + 0.5f) / float(histogram.m_numBuckets - 1);
             float x = xmin + percent * (xmax - xmin);
-            float y = function(x);
+            float y = std::max(function(x), 0.0f);
 
             fprintf(file, "\"%zu\",\"%f\",\"%f\",\"%f\",\"%zu\",\"%f\",\n", index, x, y, y / normalizationConstant, histogram.m_counts[index], float(histogram.m_counts[index]) / float(sampleCount));
         }
 
         fclose(file);
     }
+
+    // show results
+    printf("expected value = %0.2f\nIntegral = %0.2f from %0.2f to %0.2f\n", expectedValue, integral, xmin, xmax);
 }
 
 float Sin(float x)
@@ -178,9 +189,9 @@ float AbsSin(float x)
 
 int main(int argc, char** argv)
 {
-    MetropolisMCMC(Sin, 0.5f, 0.2f, 100000);
+    MetropolisMCMC(Sin, c_pi / 2.0f, 0.2f, 100000, 100);
 
-    //MetropolisMCMC(AbsSin, 0.5f, 0.2f, 100000);
+    system("Pause");
 
     return 0;
 }
@@ -230,6 +241,8 @@ TODO:
 * you have to tune how fast you move x around.
  * could imagine making it smaller over time. simulated annealing style. cooling rate another hyper parameter though.
 
+* show the value of a good initial guess, by showing convergence with a good vs bad guess.
+ * i guess it depends on step size too...
 
 - this is continuous PDF, but works for discrete PMF too.
  - i think the main differences are...
@@ -250,7 +263,12 @@ https://www.youtube.com/watch?v=3ZmW_7NXVvk
 https://towardsdatascience.com/a-zero-math-introduction-to-markov-chain-monte-carlo-methods-dcba889e0c50
 https://jeremykun.com/2015/04/06/markov-chain-monte-carlo-without-all-the-bullshit/
 
+https://www.johndcook.com/blog/2016/01/23/introduction-to-mcmc/
 
+https://www.johndcook.com/blog/2016/01/25/mcmc-burn-in/
+
+This code just picks a new point every time. Not quite MCMC, since there is no random walk.
+https://bl.ocks.org/eliangcs/6e8b45f88fd3767363e7
 
 Next: read up on metropolis light transport
 Next: Hamilton Monte Carlo since you can do big jumps if you can get derivative (dual numbers!)
