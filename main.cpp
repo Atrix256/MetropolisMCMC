@@ -63,12 +63,13 @@ void MetropolisMCMC(const FUNCTION& function, float xstart, float stepSizeSigma,
     std::vector<std::array<float, 2>> samples(sampleCount);
     float ymin = 0.0f;
     float ymax = 0.0f;
+    float expectedValue = 0.0f;
     {
         fopen_s(&file, "out/out.csv", "w+t");
 
         float xcurrent = xstart;
         float ycurrent = function(xstart);
-        float expectedValue = ycurrent;
+        expectedValue = ycurrent;
 
         fprintf(file, "\"index\",\"x\",\"y\",\"expected value\"\n");
         fprintf(file, "\"%zu\",\"%f\",\"%f\",\"%f\"\n", size_t(0), xcurrent, ycurrent, expectedValue);
@@ -119,6 +120,8 @@ void MetropolisMCMC(const FUNCTION& function, float xstart, float stepSizeSigma,
     Histogram histogram(xmin, xmax, 100);
     for (const std::array<float, 2>& s : samples)
         histogram.AddValue(s[0]);
+
+    float definiteIntegral = expectedValue * (xmax-xmin);
 
     // write out a histogram file
     {
@@ -188,6 +191,8 @@ TODO:
 
 * make a wrapper function that will clamp a function by returning 0 when out of bounds.
  * this is for integrating functions between specific values
+
+* actually use this to integrate. the expected value is not quite there.
 
 ? does the random walk have to be gaussian? could it be white noise?
  * i think so, but which is better?
