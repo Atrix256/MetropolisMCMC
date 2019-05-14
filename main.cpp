@@ -4,6 +4,8 @@
 #include <vector>
 #include <array>
 
+static const float c_pi = 3.14159265359f;
+
 inline float Lerp(float a, float b, float t)
 {
     return a * (1.0f - t) + b * t;
@@ -46,7 +48,7 @@ public:
 };
 
 template <typename FUNCTION>
-void MetropolisMCMC(const FUNCTION& function, float xmin, float xmax, float xstart, float stepSizeSigma, size_t sampleCount)
+void MetropolisMCMC(const FUNCTION& function, float xstart, float stepSizeSigma, size_t sampleCount)
 {
     std::random_device rd;
     std::seed_seq fullSeed{ rd(), rd(), rd(), rd(), rd(), rd(), rd(), rd() };
@@ -79,7 +81,7 @@ void MetropolisMCMC(const FUNCTION& function, float xmin, float xmax, float xsta
 
         for (size_t sampleIndex = 1; sampleIndex < sampleCount; ++sampleIndex)
         {
-            float xnext = Clamp(xcurrent + normalDist(rng), xmin, xmax);
+            float xnext = xcurrent + normalDist(rng);
             float ynext = function(xnext);
 
             // take the new x if y next > ycurrent, or with some probability based on how much worse it is.
@@ -107,6 +109,13 @@ void MetropolisMCMC(const FUNCTION& function, float xmin, float xmax, float xsta
     }
 
     // make a histogram
+    float xmin = samples[0][0];
+    float xmax = samples[0][0];
+    for (const std::array<float, 2>& s : samples)
+    {
+        xmin = std::min(xmin, s[0]);
+        xmax = std::max(xmax, s[0]);
+    }
     Histogram histogram(xmin, xmax, 100);
     for (const std::array<float, 2>& s : samples)
         histogram.AddValue(s[0]);
@@ -142,18 +151,33 @@ void MetropolisMCMC(const FUNCTION& function, float xmin, float xmax, float xsta
 
 float Sin(float x)
 {
-    return sinf(x);
+    if (x < 0.0f || x > c_pi)
+        return 0.0f;
+
+    return std::max(sinf(x), 0.0f);
 }
 
-float IndefiniteIntegral_Sin(float x)
+float SinSquared(float x)
 {
-    return -cosf(x);
+    if (x < 0.0f || x > 2.0f * c_pi)
+        return 0.0f;
+
+    return std::max(sinf(x)*sin(x), 0.0f);
+}
+
+float AbsSin(float x)
+{
+    if (x < 0.0f || x > 2.0f * c_pi)
+        return 0.0f;
+
+    return fabsf(sinf(x));
 }
 
 int main(int argc, char** argv)
 {
+    MetropolisMCMC(Sin, 0.5f, 0.2f, 100000);
 
-    MetropolisMCMC(Sin, 0.0f, 3.5f, 0.5f, 0.1f, 100000);
+    //MetropolisMCMC(AbsSin, 0.5f, 0.2f, 100000);
 
     return 0;
 }
@@ -162,9 +186,11 @@ int main(int argc, char** argv)
 
 TODO:
 
-* i think clamping X biases things.
- * I think instead, you should have it just return zero outside of where you want to go? try it and see.
+* make a wrapper function that will clamp a function by returning 0 when out of bounds.
+ * this is for integrating functions between specific values
 
+? does the random walk have to be gaussian? could it be white noise?
+ * i think so, but which is better?
 
 * Also make smaller step size! Maybe be based on range?
  * need to play around with step sizes
@@ -173,15 +199,9 @@ TODO:
  ? i did this one but it doesn't seem to be correct! (or is it?)
  ? is expected value the x or the y in this case?
 
-* in the histogram, the actual calculated y's sum up to BUCKET_COUNT * 0.45970 (integration of sin(x) from 0 to 1).
- * the counts sum up to sample count, which can be normalized to a percentage, but if we are looking for a mean, what do we do?
- * maybe take the mean x and plug it in to get the mean y?
- ? we could also make our function a PDF by integrating it and dividing by that as a normalization constant. I don't like that though... you have to know too much about the function.
+ ? 2d example?
 
 
-* you have to tune how fast you move x around.
- * could imagine making it smaller over time. simulated annealing style. cooling rate another hyper parameter though.
- * could do a line search.  Probably should? talk about it in notes on blog i guess.
 
 * show both usage cases?
  ? you can use this to find the expected value (mean) which lets you integrate
@@ -191,21 +211,26 @@ TODO:
 
 - use this for sampling from a function as if it were a PDF.
  - maybe a couple 1d examples, and maybe a 2d example?
- - could use STB to show data.
+ - could use STB to show data. or just use excel.
+
+
+ 
+
+
+ Notes:
+* if function goes negative, I don't think it ever chooses probability values there.
+ * yeah. it makes the probability of taking the new point be effectively zero, because the if case can never be true.
+* I think clamping biases things. maybe makes it not symetric? i dunno.
+ * yeah. it moves it to the end. It should just make it not move at all. That's why having the function return 0 out of range works.
+* you have to tune how fast you move x around.
+ * could imagine making it smaller over time. simulated annealing style. cooling rate another hyper parameter though.
+
 
 - this is continuous PDF, but works for discrete PMF too.
  - i think the main differences are...
  - 1) when moving to next state, choose randomly from neighbors
  - 2) Also need a possibility for staying in the same state (else, you can't always possibly be at every state each step). Unsure specific probabilities
-
  - Metropolis algorithm is simpler due to being able to assume symetry. Metropolis - Hastings allows asymetry. read docs for more info.
- 
-
-
- Notes:
- * if function goes negative, I don't think it ever chooses probability values there.  Experiment and understand.
- * I think clamping biases things. maybe makes it not symetric? i dunno.
-
 
 
  Links:
