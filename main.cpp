@@ -78,11 +78,7 @@ void MetropolisMCMC(const FUNCTION& function, float xstart, float stepSizeSigma,
 
             // take the new sample if ynext > ycurrent (it's more probable), or with a probability based on how much less probable it is.
             float A = ynext / ycurrent;
-
-            // TODO: this doesn't seem right... something seems off, even though this gives the right answer.
-            A = ynext > 0.0f ? 1.0f : 0.0f;
-
-            if (uniformDist(rng) < A)
+            if (A >= 1.0f || uniformDist(rng) < A)
             {
                 xcurrent = xnext;
                 ycurrent = ynext;
@@ -118,7 +114,7 @@ void MetropolisMCMC(const FUNCTION& function, float xstart, float stepSizeSigma,
 
         for (size_t sampleIndex = 0; sampleIndex < sampleCount; ++sampleIndex)
         {
-            float value = samples[sampleIndex][1] / (xmax - xmin); // f(x) / p(x)
+            float value = samples[sampleIndex][0] / samples[sampleIndex][1]; // f(x) / p(x)
             integral = Lerp(integral, value, 1.0f / float(sampleIndex + 1)); // incrementally averaging: https://blog.demofox.org/2016/08/23/incremental-averaging/
 
             expectedValue = Lerp(expectedValue, samples[sampleIndex][0], 1.0f / float(sampleIndex + 1));  // more incremental averaging
@@ -205,6 +201,9 @@ int main(int argc, char** argv)
 
 TODO:
 
+* this seems helpful:
+http://www.pmean.com/07/MetropolisAlgorithm.html
+
 * your integral is 0.2 instead of 2.0. Why??
  * also i can't understand why this works... the random walk is pretty deterministic.  Maybe is it because the p(x) needs to account for taking a gaussian step?
 
@@ -262,9 +261,8 @@ TODO:
  Links:
  - real good! https://stephens999.github.io/fiveMinuteStats/MH_intro.html
 
+ http://www.pmean.com/07/MetropolisAlgorithm.html
 
-Attachments area
-Preview YouTube video Markov Chain Monte Carlo and the Metropolis Alogorithm
 
 https://youtu.be/h1NOS_wxgGg
 https://www.youtube.com/watch?v=3ZmW_7NXVvk
@@ -280,5 +278,6 @@ https://bl.ocks.org/eliangcs/6e8b45f88fd3767363e7
 
 Next: read up on metropolis light transport
 Next: Hamilton Monte Carlo since you can do big jumps if you can get derivative (dual numbers!)
+Next: check out gibbs sampling?
 
  */
