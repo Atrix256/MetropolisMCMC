@@ -107,6 +107,7 @@ void MetropolisMCMC(const FUNCTION& function, float xstart, float stepSizeSigma,
     // The final values of integral and expected value should be taken as the most accurate.
     float integral = 0.0f;
     float expectedValue = 0.0f;
+    float averageY = 0.0f;
     {
         FILE* file = nullptr;
         fopen_s(&file, "out/samples.csv", "w+t");
@@ -117,6 +118,7 @@ void MetropolisMCMC(const FUNCTION& function, float xstart, float stepSizeSigma,
             float value = samples[sampleIndex][0] / samples[sampleIndex][1]; // f(x) / p(x)
             integral = Lerp(integral, value, 1.0f / float(sampleIndex + 1)); // incrementally averaging: https://blog.demofox.org/2016/08/23/incremental-averaging/
 
+            averageY = Lerp(averageY, samples[sampleIndex][1], 1.0f / float(sampleIndex + 1));  // more incremental averaging
             expectedValue = Lerp(expectedValue, samples[sampleIndex][0], 1.0f / float(sampleIndex + 1));  // more incremental averaging
 
             fprintf(file, "\"%zu\",\"%f\",\"%f\",\"%f\",\"%f\"\n", sampleIndex, samples[sampleIndex][0], samples[sampleIndex][1], expectedValue, integral);
@@ -201,6 +203,10 @@ int main(int argc, char** argv)
 
 TODO:
 
+* try this for your examples...
+https://twitter.com/Reedbeta/status/1129598841747935232
+
+
 * this seems helpful:
 http://www.pmean.com/07/MetropolisAlgorithm.html
 
@@ -273,11 +279,23 @@ https://www.johndcook.com/blog/2016/01/23/introduction-to-mcmc/
 
 https://www.johndcook.com/blog/2016/01/25/mcmc-burn-in/
 
+https://ermongroup.github.io/cs323-notes/probabilistic/mh/
+
 This code just picks a new point every time. Not quite MCMC, since there is no random walk.
 https://bl.ocks.org/eliangcs/6e8b45f88fd3767363e7
+
+I guess getting an integral of f(x) is not possible?
+https://stats.stackexchange.com/questions/248652/approximating-1d-integral-with-metropolis-hastings-markov-chain-monte-carlo
+
+monte carlo:
+https://blog.demofox.org/2018/06/12/monte-carlo-integration-explanation-in-1d/
+https://theclevermachine.wordpress.com/tag/monte-carlo-integration/
+
+https://radfordneal.wordpress.com/2008/08/17/the-harmonic-mean-of-the-likelihood-worst-monte-carlo-method-ever/
 
 Next: read up on metropolis light transport
 Next: Hamilton Monte Carlo since you can do big jumps if you can get derivative (dual numbers!)
 Next: check out gibbs sampling?
+
 
  */
