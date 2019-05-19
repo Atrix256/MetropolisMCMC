@@ -103,35 +103,28 @@ void MetropolisMCMC(const FUNCTION& function, float xstart, float stepSizeSigma,
         ymax = std::max(ymax, s[1]);
     }
 
-    // Write out the sample data, while also calculating the expected value and integral at each step.
-    // The final values of integral and expected value should be taken as the most accurate.
-    float integral = 0.0f;
+    // Make a histogram of the x axis to show that the samples follow the shape of the function.
+    // In other words, show that the function was used as a PDF, which described the probabilities of each possible value.
+    Histogram histogram(xmin, xmax, histogramBucketCount);
+    for (const std::array<float, 2>& s : samples)
+        histogram.AddValue(s[0]);
+
+    // Write out the sample data, while also calculating the expected value at each step.
+    // The final value of expected value should be taken as the most accurate.
     float expectedValue = 0.0f;
-    float averageY = 0.0f;
     {
         FILE* file = nullptr;
         fopen_s(&file, "out/samples.csv", "w+t");
-        fprintf(file, "\"index\",\"x\",\"y\",\"expected value\",\"integral\"\n");
+        fprintf(file, "\"index\",\"x\",\"y\",\"expected value\"\n");
 
         for (size_t sampleIndex = 0; sampleIndex < sampleCount; ++sampleIndex)
         {
-            float value = samples[sampleIndex][0] / samples[sampleIndex][1]; // f(x) / p(x)
-            integral = Lerp(integral, value, 1.0f / float(sampleIndex + 1)); // incrementally averaging: https://blog.demofox.org/2016/08/23/incremental-averaging/
-
-            averageY = Lerp(averageY, samples[sampleIndex][1], 1.0f / float(sampleIndex + 1));  // more incremental averaging
-            expectedValue = Lerp(expectedValue, samples[sampleIndex][0], 1.0f / float(sampleIndex + 1));  // more incremental averaging
-
-            fprintf(file, "\"%zu\",\"%f\",\"%f\",\"%f\",\"%f\"\n", sampleIndex, samples[sampleIndex][0], samples[sampleIndex][1], expectedValue, integral);
+            expectedValue = Lerp(expectedValue, samples[sampleIndex][0], 1.0f / float(sampleIndex + 1));  // incrementally averaging: https://blog.demofox.org/2016/08/23/incremental-averaging/
+            fprintf(file, "\"%zu\",\"%f\",\"%f\",\"%f\"\n", sampleIndex, samples[sampleIndex][0], samples[sampleIndex][1], expectedValue);
         }
 
         fclose(file);
     }
-
-    // Make a histogram of the x axis to show that they follow the shape of the function.
-    // That is, the function was used as a PDF, which described the probabilities of each possible value.
-    Histogram histogram(xmin, xmax, histogramBucketCount);
-    for (const std::array<float, 2>& s : samples)
-        histogram.AddValue(s[0]);
 
     // write out a histogram file
     {
@@ -163,7 +156,7 @@ void MetropolisMCMC(const FUNCTION& function, float xstart, float stepSizeSigma,
     }
 
     // show results
-    printf("%zu samples taken\nexpected value = %0.2f\nIntegral = %0.2f from %0.2f to %0.2f\n", sampleCount, expectedValue, integral, xmin, xmax);
+    printf("%zu samples taken\nexpected value = %0.2f\n", sampleCount, expectedValue);
 }
 
 float Sin(float x)
@@ -202,6 +195,12 @@ int main(int argc, char** argv)
 /*
 
 TODO:
+
+* Burn in / get to 0.234 acceptance rate by tuning sigma
+
+* do the thing about using the histogram to estimate the normalization constant
+ * it'd be nice to show it estimating over time.
+
 
 * try this for your examples...
 https://twitter.com/Reedbeta/status/1129598841747935232
@@ -292,6 +291,20 @@ https://blog.demofox.org/2018/06/12/monte-carlo-integration-explanation-in-1d/
 https://theclevermachine.wordpress.com/tag/monte-carlo-integration/
 
 https://radfordneal.wordpress.com/2008/08/17/the-harmonic-mean-of-the-likelihood-worst-monte-carlo-method-ever/
+
+good twitter thread
+https://twitter.com/Atrix256/status/1129545765603479558
+
+
+Odd note: this is kinda integration with red noise. compare to blue?  Makes you wonder how the rejection stuff would play out with blue noise or LDS
+
+
+? how would you use MCMC for searching a sorted list? plant the seed.
+
+Integration Methods:
+1) the worst Monte Carlo method
+2) use tricky math to make normalization constant cancel out (#1 is an example)
+3) your histogram bucket Monte Carlo idea. Find largest bucket. Monte Carlo integrate over same range. Divide for estimate of normalization constant.
 
 Next: read up on metropolis light transport
 Next: Hamilton Monte Carlo since you can do big jumps if you can get derivative (dual numbers!)
