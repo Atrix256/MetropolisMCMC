@@ -97,6 +97,7 @@ float CalculateNormalizationConstant(const FUNCTION& function, const Histogram& 
             largestCount = histogram.m_counts[index];
         }
     }
+
     float C = float(histogram.m_counts.size()) * float(largestCount) / float(sampleCount);
 
     // Integrate the function numerically over the largest bucket, using 1d sobol
@@ -122,11 +123,11 @@ float CalculateNormalizationConstant(const FUNCTION& function, const Histogram& 
     }
 
     // the estimate of the normalization constant is D/C
-    return (D / C);
+    return D / C;
 }
 
 template <typename FUNCTION>
-void MetropolisMCMC(const FUNCTION& function, float xstart, float stepSizeSigma, size_t sampleCount, size_t histogramBucketCount)
+void MetropolisMCMC(const FUNCTION& function, float xstart, float stepSizeSigma, size_t sampleCount, size_t histogramBucketCount, size_t integrationHistogramBucketCount)
 {
     // run our mcmc code to generate sample points
     std::vector<std::array<float, 2>> samples(sampleCount);
@@ -180,14 +181,18 @@ void MetropolisMCMC(const FUNCTION& function, float xstart, float stepSizeSigma,
         ymax = std::max(ymax, s[1]);
     }
 
+    // calculate the normalization constant so we can estimate the integral
+    // Use a different histogram with fewer larger buckets to make the MCMC part of the estimate more accurate
+    Histogram histogram2(xmin, xmax, integrationHistogramBucketCount);
+    for (const std::array<float, 2>& s : samples)
+        histogram2.AddValue(s[0]);
+    float normalizationConstant = CalculateNormalizationConstant(function, histogram2, sampleCount);
+
     // Make a histogram of the x axis to show that the samples follow the shape of the function.
     // In other words, show that the function was used as a PDF, which described the probabilities of each possible value.
     Histogram histogram(xmin, xmax, histogramBucketCount);
     for (const std::array<float, 2>& s : samples)
         histogram.AddValue(s[0]);
-
-    // calculate the normalization constant so we can estimate the integral
-    float normalizationConstant = CalculateNormalizationConstant(function, histogram, sampleCount);
 
     // Write out the sample data, while also calculating the expected value at each step.
     // The final value of expected value should be taken as the most accurate.
@@ -273,7 +278,7 @@ float AbsSin(float x)
 
 int main(int argc, char** argv)
 {
-    MetropolisMCMC(Sin, c_pi / 2.0f, 0.2f, 100000, 100); // TODO: more histogram buckets!
+    MetropolisMCMC(Sin, c_pi / 2.0f, 0.2f, 100000, 100, 10);
 
     system("Pause");
 
@@ -284,7 +289,7 @@ int main(int argc, char** argv)
 
 TODO:
 
-* The normalization constant IS the integral. Find a way to report that as it makes it.
+* The normalization constant IS the integral. Find a way to report that as it makes it with more samples.
 
 * Burn in / get to 0.234 acceptance rate by tuning sigma
 
@@ -353,6 +358,12 @@ http://www.pmean.com/07/MetropolisAlgorithm.html
  - Metropolis algorithm is simpler due to being able to assume symetry. Metropolis - Hastings allows asymetry. read docs for more info.
 
 
+ * when estimating the normalization constant
+  * 1000 samples of sobol integration (D) vs the "highest count bucket" (C).  C often had 3-8 times as much error as D, and is 1/2 the value, so has even higher percentage error.
+  * this true, at least for sin(x) from 0 to pi. 100000 MCMC samples. 100 histogram buckets. 0.2 sigma and initial guess of 1.57
+  * taking it to 10 buckets, it was consistently about 0.03 off, while the sobol integration was 0.06. making them even by percentage error.
+  * this was before the auto tuning of guess and sigma
+
  Links:
  - real good! https://stephens999.github.io/fiveMinuteStats/MH_intro.html
 
@@ -386,8 +397,12 @@ good twitter thread
 https://twitter.com/Atrix256/status/1129545765603479558
 
 
-Odd note: this is kinda integration with red noise. compare to blue?  Makes you wonder how the rejection stuff would play out with blue noise or LDS
+Link for sobol, to sample zoo:
+https://github.com/Atrix256/SampleZoo
 
+
+Odd note: this is kinda integration with red noise. compare to blue?  Makes you wonder how the rejection stuff would play out with blue noise or LDS
+ * possibly hybrid? do some number of MCMC and some white noise.
 
 ? how would you use MCMC for searching a sorted list? plant the seed.
 
