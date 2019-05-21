@@ -5,6 +5,8 @@
 #include <array>
 #include <conio.h>
 
+static const size_t c_numSamplesNormalizationConstant = 1000;
+
 static const float c_pi = 3.14159265359f;
 
 inline float Lerp(float a, float b, float t)
@@ -42,11 +44,86 @@ public:
         m_counts[bucket]++;
     }
 
+    // [min, max)
+    void GetBucketMinMax(size_t index, float& min, float& max) const
+    {
+        min = (float(index) / float(m_numBuckets)) * (m_max - m_min) + m_min;
+        max = float(index + 1) / float(m_numBuckets) * (m_max - m_min) + m_min;
+    }
+
     float m_min;
     float m_max;
     size_t m_numBuckets;
     std::vector<size_t> m_counts;
 };
+
+static size_t Ruler(size_t n)
+{
+    size_t ret = 0;
+    while (n != 0 && (n & 1) == 0)
+    {
+        n /= 2;
+        ++ret;
+    }
+    return ret;
+}
+
+void Sobol(std::vector<float>& values, size_t numValues)
+{
+    values.resize(numValues);
+    size_t sampleInt = 0;
+    for (size_t i = 0; i < numValues; ++i)
+    {
+        size_t ruler = Ruler(i + 1);
+        size_t direction = size_t(size_t(1) << size_t(31 - ruler));
+        sampleInt = sampleInt ^ direction;
+        values[i] = float(sampleInt) / std::pow(2.0f, 32.0f);
+    }
+}
+
+template <typename FUNCTION>
+float CalculateNormalizationConstant(const FUNCTION& function, const Histogram& histogram, size_t sampleCount)
+{
+    // Find largest count histogram bucket.
+    // Calculate it as a sample percentage, call this C.
+    size_t largestCount = histogram.m_counts[0];
+    size_t largestCountIndex = 0;
+
+    for (size_t index = 1; index < histogram.m_counts.size(); ++index)
+    {
+        if (histogram.m_counts[index] > largestCount)
+        {
+            largestCountIndex = index;
+            largestCount = histogram.m_counts[index];
+        }
+    }
+    float C = float(histogram.m_counts.size()) * float(largestCount) / float(sampleCount);
+
+    // Integrate the function numerically over the largest bucket, using 1d sobol
+    float D = 0.0f;
+    {
+        float sampleMin, sampleMax;
+        histogram.GetBucketMinMax(largestCountIndex, sampleMin, sampleMax);
+        size_t sampleInt = 0;
+        for (size_t index = 0; index < c_numSamplesNormalizationConstant; ++index)
+        {
+            // get the sobol sample from 0 to 1
+            size_t ruler = Ruler(index + 1);
+            size_t direction = size_t(size_t(1) << size_t(31 - ruler));
+            sampleInt = sampleInt ^ direction;
+            float sample = float(sampleInt) / std::pow(2.0f, 32.0f);
+
+            // make it be from sampleMin to sampleMax, so it's in the histogram bucket
+            sample = Lerp(sampleMin, sampleMax, sample);
+
+            D = Lerp(D, function(sample), 1.0f / float(index + 1));
+        }
+        D *= (histogram.m_max - histogram.m_min);
+    }
+
+    // the estimate of the normalization constant is D/C
+    return (D / C);
+}
 
 template <typename FUNCTION>
 void MetropolisMCMC(const FUNCTION& function, float xstart, float stepSizeSigma, size_t sampleCount, size_t histogramBucketCount)
@@ -109,6 +186,9 @@ void MetropolisMCMC(const FUNCTION& function, float xstart, float stepSizeSigma,
     for (const std::array<float, 2>& s : samples)
         histogram.AddValue(s[0]);
 
+    // calculate the normalization constant so we can estimate the integral
+    float normalizationConstant = CalculateNormalizationConstant(function, histogram, sampleCount);
+
     // Write out the sample data, while also calculating the expected value at each step.
     // The final value of expected value should be taken as the most accurate.
     float expectedValue = 0.0f;
@@ -117,9 +197,17 @@ void MetropolisMCMC(const FUNCTION& function, float xstart, float stepSizeSigma,
         fopen_s(&file, "out/samples.csv", "w+t");
         fprintf(file, "\"index\",\"x\",\"y\",\"expected value\"\n");
 
+        float integral = 0.0f;
         for (size_t sampleIndex = 0; sampleIndex < sampleCount; ++sampleIndex)
         {
             expectedValue = Lerp(expectedValue, samples[sampleIndex][0], 1.0f / float(sampleIndex + 1));  // incrementally averaging: https://blog.demofox.org/2016/08/23/incremental-averaging/
+
+            float pdf = samples[sampleIndex][1] / normalizationConstant;
+
+            // TODO: this integral calculation is wrong, remove it
+            float estimate = samples[sampleIndex][0] / pdf; // f(x) / p(x)
+            integral = Lerp(integral, estimate, 1.0f / float(sampleIndex + 1));
+
             fprintf(file, "\"%zu\",\"%f\",\"%f\",\"%f\"\n", sampleIndex, samples[sampleIndex][0], samples[sampleIndex][1], expectedValue);
         }
 
@@ -185,7 +273,7 @@ float AbsSin(float x)
 
 int main(int argc, char** argv)
 {
-    MetropolisMCMC(Sin, c_pi / 2.0f, 0.2f, 100000, 100);
+    MetropolisMCMC(Sin, c_pi / 2.0f, 0.2f, 100000, 100); // TODO: more histogram buckets!
 
     system("Pause");
 
@@ -195,6 +283,8 @@ int main(int argc, char** argv)
 /*
 
 TODO:
+
+* The normalization constant IS the integral. Find a way to report that as it makes it.
 
 * Burn in / get to 0.234 acceptance rate by tuning sigma
 
