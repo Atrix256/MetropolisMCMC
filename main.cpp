@@ -7,6 +7,9 @@
 
 static const float c_pi = 3.14159265359f;
 
+template <size_t N>
+using TSample = std::array<float, N>;
+
 inline float Lerp(float a, float b, float t)
 {
     return a * (1.0f - t) + b * t;
@@ -122,46 +125,48 @@ float CalculateNormalizationConstant(const FUNCTION& function, const Histogram& 
     return D / C;
 }
 
-template <typename FUNCTION>
-void MetropolisMCMC(const FUNCTION& function, float xstart, float stepSizeSigma, size_t sampleCount, std::vector<std::array<float, 2>>& samples)
+template <typename FUNCTION, size_t N>
+void MetropolisMCMC(const FUNCTION& function, const TSample<N-1>& start, float stepSizeSigma, size_t sampleCount, std::vector<TSample<N>>& samples)
 {
     // run our mcmc code to generate sample points
     samples.resize(sampleCount);
+    std::random_device rd;
+    std::seed_seq fullSeed{ rd(), rd(), rd(), rd(), rd(), rd(), rd(), rd() };
+    std::mt19937 rng(fullSeed);
+
+    std::normal_distribution<float> normalDist(0.0f, stepSizeSigma);
+    std::uniform_real_distribution<float> uniformDist(0.0f, 1.0f);
+
+    // make the starting sample
+    //TSample<N> currentSample = start;
+    //float currentValue = std::max(function(currentSample), 0.0f);
+
+    // make the starting sample
+    float xcurrent = start[0];
+    float ycurrent = std::max(function(xcurrent), 0.0f);
+
+    // store the first sample, as the place we start at
+    samples[0][0] = xcurrent;
+    samples[0][1] = ycurrent;
+
+    // do a random walk
+    for (size_t sampleIndex = 1; sampleIndex < sampleCount; ++sampleIndex)
     {
-        std::random_device rd;
-        std::seed_seq fullSeed{ rd(), rd(), rd(), rd(), rd(), rd(), rd(), rd() };
-        std::mt19937 rng(fullSeed);
+        // get a proposed next sample for our random walk
+        float xnext = xcurrent + normalDist(rng);
+        float ynext = std::max(function(xnext), 0.0f);
 
-        std::normal_distribution<float> normalDist(0.0f, stepSizeSigma);
-        std::uniform_real_distribution<float> uniformDist(0.0f, 1.0f);
-
-        // make the starting sample
-        float xcurrent = xstart;
-        float ycurrent = std::max(function(xstart), 0.0f);
-
-        // store the first sample, as the place we start at
-        samples[0][0] = xcurrent;
-        samples[0][1] = ycurrent;
-
-        // do a random walk
-        for (size_t sampleIndex = 1; sampleIndex < sampleCount; ++sampleIndex)
+        // take the new sample if ynext > ycurrent (it's more probable), or with a probability based on how much less probable it is.
+        float A = ynext / ycurrent;
+        if (A >= 1.0f || uniformDist(rng) < A)
         {
-            // get a proposed next sample for our random walk
-            float xnext = xcurrent + normalDist(rng);
-            float ynext = std::max(function(xnext), 0.0f);
-
-            // take the new sample if ynext > ycurrent (it's more probable), or with a probability based on how much less probable it is.
-            float A = ynext / ycurrent;
-            if (A >= 1.0f || uniformDist(rng) < A)
-            {
-                xcurrent = xnext;
-                ycurrent = ynext;
-            }
-
-            // store the current sample, whether we took the new sample or not
-            samples[sampleIndex][0] = xcurrent;
-            samples[sampleIndex][1] = ycurrent;
+            xcurrent = xnext;
+            ycurrent = ynext;
         }
+
+        // store the current sample, whether we took the new sample or not
+        samples[sampleIndex][0] = xcurrent;
+        samples[sampleIndex][1] = ycurrent;
     }
 }
 
@@ -284,21 +289,21 @@ int main(int argc, char** argv)
     // y = sin(x) from 0 to pi
     {
         std::vector<std::array<float, 2>> samples;
-        MetropolisMCMC(Sin, c_pi / 2.0f, 0.2f, 100000, samples);
+        MetropolisMCMC(Sin, { c_pi / 2.0f }, 0.2f, 100000, samples);
         Report(Sin, 100, 10, 1000, samples, "out/samples_Sin.csv", "out/histogram_Sin.csv");
     }
 
     // y = sin(x) * sin(x) from 0 to 2 pi
     {
         std::vector<std::array<float, 2>> samples;
-        MetropolisMCMC(SinSquared, c_pi / 2.0f, 0.2f, 100000, samples);
+        MetropolisMCMC(SinSquared, { c_pi / 2.0f }, 0.2f, 100000, samples);
         Report(SinSquared, 100, 10, 1000, samples, "out/samples_SinSq.csv", "out/histogram_SinSq.csv");
     }
 
     // y = |sin(x)| from 0 to 2 pi
     {
         std::vector<std::array<float, 2>> samples;
-        MetropolisMCMC(AbsSin, c_pi / 2.0f, 0.2f, 100000, samples);
+        MetropolisMCMC(AbsSin, { c_pi / 2.0f }, 0.2f, 100000, samples);
         Report(AbsSin, 100, 10, 1000, samples, "out/samples_AbsSin.csv", "out/histogram_AbsSin.csv");
     }
 
@@ -312,14 +317,13 @@ int main(int argc, char** argv)
 TODO:
 
 ? 2d example?
+ * have mcmc and reporting use TSample so we can do 2d next
 
 - use this for sampling from a function as if it were a PDF.
  - maybe a couple 1d examples, and maybe a 2d example?
  - could use STB to show data. or just use excel.
 
  * excel can do 3d histograms
-
-* maybe seperate the MCMC generation code from the reporting code
 
  
 
