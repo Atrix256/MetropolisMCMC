@@ -5,6 +5,7 @@
 #include <array>
 #include <conio.h>
 
+// how many samples to use when doing quasi monte carlo integration of a histogram bucket region, to calculate normalization constant
 static const size_t c_numSamplesNormalizationConstant = 1000;
 
 static const float c_pi = 3.14159265359f;
@@ -33,9 +34,7 @@ public:
         , m_max(max)
         , m_numBuckets(numBuckets)
         , m_counts(numBuckets, 0)
-    {
-
-    }
+    { }
 
     void AddValue(float value)
     {
@@ -44,11 +43,11 @@ public:
         m_counts[bucket]++;
     }
 
-    // [min, max)
+    // Get a bucket's [min, max)
     void GetBucketMinMax(size_t index, float& min, float& max) const
     {
-        min = (float(index) / float(m_numBuckets)) * (m_max - m_min) + m_min;
-        max = float(index + 1) / float(m_numBuckets) * (m_max - m_min) + m_min;
+        min = Lerp(m_min, m_max, float(index) / float(m_numBuckets));
+        max = Lerp(m_min, m_max, float(index + 1) / float(m_numBuckets));
     }
 
     float m_min;
@@ -85,10 +84,9 @@ template <typename FUNCTION>
 float CalculateNormalizationConstant(const FUNCTION& function, const Histogram& histogram, size_t sampleCount)
 {
     // Find largest count histogram bucket.
-    // Calculate it as a sample percentage, call this C.
+    // Calculate it as a percentage of total samples, call this C.
     size_t largestCount = histogram.m_counts[0];
     size_t largestCountIndex = 0;
-
     for (size_t index = 1; index < histogram.m_counts.size(); ++index)
     {
         if (histogram.m_counts[index] > largestCount)
@@ -97,10 +95,9 @@ float CalculateNormalizationConstant(const FUNCTION& function, const Histogram& 
             largestCount = histogram.m_counts[index];
         }
     }
-
     float C = float(histogram.m_counts.size()) * float(largestCount) / float(sampleCount);
 
-    // Integrate the function numerically over the largest bucket, using 1d sobol
+    // Integrate the function numerically over that largest bucket, using 1d sobol
     float D = 0.0f;
     {
         float sampleMin, sampleMax;
@@ -122,7 +119,9 @@ float CalculateNormalizationConstant(const FUNCTION& function, const Histogram& 
         D *= (histogram.m_max - histogram.m_min);
     }
 
-    // the estimate of the normalization constant is D/C
+    // the estimate of the normalization constant is D / C
+    // D is the integration of the un-normalized pdf for that one histogram bucket.
+    // C is the integration of the normalized pdf for that one histogram bucket.
     return D / C;
 }
 
@@ -201,18 +200,9 @@ void MetropolisMCMC(const FUNCTION& function, float xstart, float stepSizeSigma,
         FILE* file = nullptr;
         fopen_s(&file, "out/samples.csv", "w+t");
         fprintf(file, "\"index\",\"x\",\"y\",\"expected value\"\n");
-
-        float integral = 0.0f;
         for (size_t sampleIndex = 0; sampleIndex < sampleCount; ++sampleIndex)
         {
             expectedValue = Lerp(expectedValue, samples[sampleIndex][0], 1.0f / float(sampleIndex + 1));  // incrementally averaging: https://blog.demofox.org/2016/08/23/incremental-averaging/
-
-            float pdf = samples[sampleIndex][1] / normalizationConstant;
-
-            // TODO: this integral calculation is wrong, remove it
-            float estimate = samples[sampleIndex][0] / pdf; // f(x) / p(x)
-            integral = Lerp(integral, estimate, 1.0f / float(sampleIndex + 1));
-
             fprintf(file, "\"%zu\",\"%f\",\"%f\",\"%f\"\n", sampleIndex, samples[sampleIndex][0], samples[sampleIndex][1], expectedValue);
         }
 
@@ -249,9 +239,10 @@ void MetropolisMCMC(const FUNCTION& function, float xstart, float stepSizeSigma,
     }
 
     // show results
-    printf("%zu samples taken\nexpected value = %0.2f\n", sampleCount, expectedValue);
+    printf("%zu samples taken\nexpected value = %f\nIntegration = %f\n", sampleCount, expectedValue, normalizationConstant);
 }
 
+// integrating sin(x) from 0 to pi == 2
 float Sin(float x)
 {
     if (x < 0.0f || x > c_pi)
@@ -260,6 +251,7 @@ float Sin(float x)
     return std::max(sinf(x), 0.0f);
 }
 
+// integrating sin(x)*sin(x) from 0 to 2 pi == pi
 float SinSquared(float x)
 {
     if (x < 0.0f || x > 2.0f * c_pi)
@@ -268,6 +260,7 @@ float SinSquared(float x)
     return std::max(sinf(x)*sin(x), 0.0f);
 }
 
+// integrating |sin(x)| from 0 to 2 pi == 4
 float AbsSin(float x)
 {
     if (x < 0.0f || x > 2.0f * c_pi)
@@ -289,34 +282,11 @@ int main(int argc, char** argv)
 
 TODO:
 
-* The normalization constant IS the integral. Find a way to report that as it makes it with more samples.
-
-* Burn in / get to 0.234 acceptance rate by tuning sigma
-
-* do the thing about using the histogram to estimate the normalization constant
- * it'd be nice to show it estimating over time.
-
-
 * try this for your examples...
 https://twitter.com/Reedbeta/status/1129598841747935232
 
-
-* this seems helpful:
-http://www.pmean.com/07/MetropolisAlgorithm.html
-
-* your integral is 0.2 instead of 2.0. Why??
- * also i can't understand why this works... the random walk is pretty deterministic.  Maybe is it because the p(x) needs to account for taking a gaussian step?
-
-* make a wrapper function that will clamp a function by returning 0 when out of bounds.
- * this is for integrating functions between specific values
-
-* actually use this to integrate. the expected value is not quite there.
-
 ? does the random walk have to be gaussian? could it be white noise?
  * i think so, but which is better?
-
-* Also make smaller step size! Maybe be based on range?
- * need to play around with step sizes
 
 * average y value is the expected value.
  ? i did this one but it doesn't seem to be correct! (or is it?)
@@ -324,13 +294,6 @@ http://www.pmean.com/07/MetropolisAlgorithm.html
 
  ? 2d example?
 
-
-
-* show both usage cases?
- ? you can use this to find the expected value (mean) which lets you integrate
- ? you can also use this to draw random numbers
-
-? how fast is convergance?
 
 - use this for sampling from a function as if it were a PDF.
  - maybe a couple 1d examples, and maybe a 2d example?
@@ -347,6 +310,13 @@ http://www.pmean.com/07/MetropolisAlgorithm.html
  * yeah. it moves it to the end. It should just make it not move at all. That's why having the function return 0 out of range works.
 * you have to tune how fast you move x around.
  * could imagine making it smaller over time. simulated annealing style. cooling rate another hyper parameter though.
+
+
+ * samples aren't independent, so convergance rates not as well known
+
+* Burn in / get to 0.234 acceptance rate by tuning sigma
+ * didn't play with step size a whole lot
+ * tried briefly to auto-tune sigma but couldn't reliably get it to be close & not infinite loop
 
 * show the value of a good initial guess, by showing convergence with a good vs bad guess.
  * i guess it depends on step size too...
