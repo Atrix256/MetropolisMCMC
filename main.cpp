@@ -166,7 +166,15 @@ void MetropolisMCMC(const FUNCTION& function, float xstart, float stepSizeSigma,
 }
 
 template <typename FUNCTION>
-void Report(const FUNCTION& function, size_t histogramBucketCount, size_t integrationHistogramBucketCount, size_t sampleCountNormalizationConstant, std::vector<std::array<float, 2>>& samples)
+void Report(
+    const FUNCTION& function,
+    size_t histogramBucketCount,
+    size_t integrationHistogramBucketCount,
+    size_t sampleCountNormalizationConstant,
+    std::vector<std::array<float, 2>>& samples,
+    const char* samplesFileName,
+    const char* histogramFileName
+)
 {
     // calculate the min and max x and y of the samples
     float xmin = samples[0][0];
@@ -200,7 +208,7 @@ void Report(const FUNCTION& function, size_t histogramBucketCount, size_t integr
     float expectedValue = 0.0f;
     {
         FILE* file = nullptr;
-        fopen_s(&file, "out/samples.csv", "w+t");
+        fopen_s(&file, samplesFileName, "w+t");
         fprintf(file, "\"index\",\"x\",\"y\",\"expected value\"\n");
         for (size_t sampleIndex = 0; sampleIndex < sampleCount; ++sampleIndex)
         {
@@ -214,7 +222,7 @@ void Report(const FUNCTION& function, size_t histogramBucketCount, size_t integr
     // write out a histogram file
     {
         FILE* file = nullptr;
-        fopen_s(&file, "out/histogram.csv", "w+t");
+        fopen_s(&file, histogramFileName, "w+t");
         fprintf(file, "\"Bucket Index\",\"Bucket X\",\"Actual Y\",\"Normalized Y\",\"Count\",\"Percentage\",\n");
 
         // find out what the normalization constant is of the real function for the histogram buckets
@@ -241,7 +249,7 @@ void Report(const FUNCTION& function, size_t histogramBucketCount, size_t integr
     }
 
     // show results
-    printf("%zu samples taken\nexpected value = %f\nIntegration = %f\n", sampleCount, expectedValue, normalizationConstant);
+    printf("%zu samples taken\nexpected value = %f\nIntegration = %f\n\n", sampleCount, expectedValue, normalizationConstant);
 }
 
 // integrating sin(x) from 0 to pi == 2
@@ -273,10 +281,26 @@ float AbsSin(float x)
 
 int main(int argc, char** argv)
 {
-    std::vector<std::array<float, 2>> samples;
-    MetropolisMCMC(Sin, c_pi / 2.0f, 0.2f, 100000, samples);
+    // y = sin(x) from 0 to pi
+    {
+        std::vector<std::array<float, 2>> samples;
+        MetropolisMCMC(Sin, c_pi / 2.0f, 0.2f, 100000, samples);
+        Report(Sin, 100, 10, 1000, samples, "out/samples_Sin.csv", "out/histogram_Sin.csv");
+    }
 
-    Report(Sin, 100, 10, 1000, samples);
+    // y = sin(x) * sin(x) from 0 to 2 pi
+    {
+        std::vector<std::array<float, 2>> samples;
+        MetropolisMCMC(SinSquared, c_pi / 2.0f, 0.2f, 100000, samples);
+        Report(SinSquared, 100, 10, 1000, samples, "out/samples_SinSq.csv", "out/histogram_SinSq.csv");
+    }
+
+    // y = |sin(x)| from 0 to 2 pi
+    {
+        std::vector<std::array<float, 2>> samples;
+        MetropolisMCMC(AbsSin, c_pi / 2.0f, 0.2f, 100000, samples);
+        Report(AbsSin, 100, 10, 1000, samples, "out/samples_AbsSin.csv", "out/histogram_AbsSin.csv");
+    }
 
     system("Pause");
 
