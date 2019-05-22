@@ -5,9 +5,6 @@
 #include <array>
 #include <conio.h>
 
-// how many samples to use when doing quasi monte carlo integration of a histogram bucket region, to calculate normalization constant
-static const size_t c_numSamplesNormalizationConstant = 1000;
-
 static const float c_pi = 3.14159265359f;
 
 inline float Lerp(float a, float b, float t)
@@ -81,7 +78,7 @@ void Sobol(std::vector<float>& values, size_t numValues)
 }
 
 template <typename FUNCTION>
-float CalculateNormalizationConstant(const FUNCTION& function, const Histogram& histogram, size_t sampleCount)
+float CalculateNormalizationConstant(const FUNCTION& function, const Histogram& histogram, size_t sampleCount, size_t sampleCountNormalizationConstant)
 {
     // Find largest count histogram bucket.
     // Calculate it as a percentage of total samples, call this C.
@@ -103,7 +100,7 @@ float CalculateNormalizationConstant(const FUNCTION& function, const Histogram& 
         float sampleMin, sampleMax;
         histogram.GetBucketMinMax(largestCountIndex, sampleMin, sampleMax);
         size_t sampleInt = 0;
-        for (size_t index = 0; index < c_numSamplesNormalizationConstant; ++index)
+        for (size_t index = 0; index < sampleCountNormalizationConstant; ++index)
         {
             // get the sobol sample from 0 to 1
             size_t ruler = Ruler(index + 1);
@@ -126,10 +123,10 @@ float CalculateNormalizationConstant(const FUNCTION& function, const Histogram& 
 }
 
 template <typename FUNCTION>
-void MetropolisMCMC(const FUNCTION& function, float xstart, float stepSizeSigma, size_t sampleCount, size_t histogramBucketCount, size_t integrationHistogramBucketCount)
+void MetropolisMCMC(const FUNCTION& function, float xstart, float stepSizeSigma, size_t sampleCount, std::vector<std::array<float, 2>>& samples)
 {
     // run our mcmc code to generate sample points
-    std::vector<std::array<float, 2>> samples(sampleCount);
+    samples.resize(sampleCount);
     {
         std::random_device rd;
         std::seed_seq fullSeed{ rd(), rd(), rd(), rd(), rd(), rd(), rd(), rd() };
@@ -166,7 +163,11 @@ void MetropolisMCMC(const FUNCTION& function, float xstart, float stepSizeSigma,
             samples[sampleIndex][1] = ycurrent;
         }
     }
+}
 
+template <typename FUNCTION>
+void Report(const FUNCTION& function, size_t histogramBucketCount, size_t integrationHistogramBucketCount, size_t sampleCountNormalizationConstant, std::vector<std::array<float, 2>>& samples)
+{
     // calculate the min and max x and y of the samples
     float xmin = samples[0][0];
     float xmax = samples[0][0];
@@ -182,10 +183,11 @@ void MetropolisMCMC(const FUNCTION& function, float xstart, float stepSizeSigma,
 
     // calculate the normalization constant so we can estimate the integral
     // Use a different histogram with fewer larger buckets to make the MCMC part of the estimate more accurate
+    size_t sampleCount = samples.size();
     Histogram histogram2(xmin, xmax, integrationHistogramBucketCount);
     for (const std::array<float, 2>& s : samples)
         histogram2.AddValue(s[0]);
-    float normalizationConstant = CalculateNormalizationConstant(function, histogram2, sampleCount);
+    float normalizationConstant = CalculateNormalizationConstant(function, histogram2, sampleCount, sampleCountNormalizationConstant);
 
     // Make a histogram of the x axis to show that the samples follow the shape of the function.
     // In other words, show that the function was used as a PDF, which described the probabilities of each possible value.
@@ -271,7 +273,10 @@ float AbsSin(float x)
 
 int main(int argc, char** argv)
 {
-    MetropolisMCMC(Sin, c_pi / 2.0f, 0.2f, 100000, 100, 10);
+    std::vector<std::array<float, 2>> samples;
+    MetropolisMCMC(Sin, c_pi / 2.0f, 0.2f, 100000, samples);
+
+    Report(Sin, 100, 10, 1000, samples);
 
     system("Pause");
 
@@ -288,6 +293,9 @@ TODO:
  - maybe a couple 1d examples, and maybe a 2d example?
  - could use STB to show data. or just use excel.
 
+ * excel can do 3d histograms
+
+* maybe seperate the MCMC generation code from the reporting code
 
  
 
