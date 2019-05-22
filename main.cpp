@@ -282,18 +282,7 @@ int main(int argc, char** argv)
 
 TODO:
 
-* try this for your examples...
-https://twitter.com/Reedbeta/status/1129598841747935232
-
-? does the random walk have to be gaussian? could it be white noise?
- * i think so, but which is better?
-
-* average y value is the expected value.
- ? i did this one but it doesn't seem to be correct! (or is it?)
- ? is expected value the x or the y in this case?
-
- ? 2d example?
-
+? 2d example?
 
 - use this for sampling from a function as if it were a PDF.
  - maybe a couple 1d examples, and maybe a 2d example?
@@ -311,6 +300,7 @@ https://twitter.com/Reedbeta/status/1129598841747935232
 * you have to tune how fast you move x around.
  * could imagine making it smaller over time. simulated annealing style. cooling rate another hyper parameter though.
 
+ * random walk doesn't have to be gaussian but it commonly is.
 
  * samples aren't independent, so convergance rates not as well known
 
