@@ -376,8 +376,59 @@ float XYSquared(const std::array<float, 2>& xy)
     return std::max(xy[0] * xy[1] * xy[1], 0.0f);
 }
 
+void SimpleMCMC()
+{
+    // parameters
+    static const float c_stepSizeSigma = 0.2f;
+    static const float c_startX = c_pi / 2.0f;
+    static const size_t c_sampleCount = 100;
+
+    // function to draw random numbers from
+    auto function = [] (float x) -> float
+    {
+        if (x < 0.0f || x > c_pi)
+            return 0.0f;
+        return sin(x);
+    };
+
+    // set up random number generation
+    std::random_device rd;
+    std::seed_seq fullSeed{ rd(), rd(), rd(), rd(), rd(), rd(), rd(), rd() };
+    std::mt19937 rng(fullSeed);
+
+    std::normal_distribution<float> normalDist(0.0f, c_stepSizeSigma);
+    std::uniform_real_distribution<float> uniformDist(0.0f, 1.0f);
+
+    // make and report the starting sample
+    float currentX = c_startX;
+    float currentY = function(currentX);
+    printf("%f", currentX);
+
+    // do a random walk
+    for (size_t sampleIndex = 1; sampleIndex < c_sampleCount; ++sampleIndex)
+    {
+        // get a proposed next sample for our random walk
+        float nextX = currentX + normalDist(rng);
+        float nextY = function(nextX);
+
+        // take the new sample if ynext > ycurrent (it's more probable), or with a probability based on how much less probable it is.
+        float A = nextY / currentY;
+        if (A >= 1.0f || uniformDist(g_rng) < A)
+        {
+            currentX = nextX;
+            currentY = nextY;
+        }
+
+        // report the current sample
+        printf(" %f", currentX);
+    }
+    printf("\n");
+}
+
 int main(int argc, char** argv)
 {
+    SimpleMCMC();
+
     // y = sin(x) from 0 to pi
     {
         printf("y=sin(x)   x in [0,pi]\n");
@@ -423,25 +474,20 @@ int main(int argc, char** argv)
 
 
  Notes:
-* if function goes negative, I don't think it ever chooses probability values there.
- * yeah. it makes the probability of taking the new point be effectively zero, because the if case can never be true.
-* I think clamping biases things. maybe makes it not symetric? i dunno.
- * yeah. it moves it to the end. It should just make it not move at all. That's why having the function return 0 out of range works.
-* you have to tune how fast you move x around.
- * could imagine making it smaller over time. simulated annealing style. cooling rate another hyper parameter though.
+
+ * put actual 5 lines of code or whatever on blog post for doing MCMC
+  * maybe make a drop dead simple copy/pastable function here in this cpp and paste it into the blog post
+  * actually no... code gets mangled.
+  * well, could take a screenshot of the code, but it's not copy/pasteable...
+
+ * talk about calculating expected value while also generating numbers?
+ 
 
  * integrating using white noise. not the best at all but it works in any dimension.
 
- * random walk doesn't have to be gaussian but it commonly is.
 
  * samples aren't independent, so convergance rates not as well known
 
-* Burn in / get to 0.234 acceptance rate by tuning sigma
- * didn't play with step size a whole lot
- * tried briefly to auto-tune sigma but couldn't reliably get it to be close & not infinite loop
-
-* show the value of a good initial guess, by showing convergence with a good vs bad guess.
- * i guess it depends on step size too...
 
 - this is continuous PDF, but works for discrete PMF too.
  - i think the main differences are...
@@ -504,8 +550,35 @@ Integration Methods:
 3) your histogram bucket Monte Carlo idea. Find largest bucket. Monte Carlo integrate over same range. Divide for estimate of normalization constant.
 
 Next: read up on metropolis light transport
-Next: Hamilton Monte Carlo since you can do big jumps if you can get derivative (dual numbers!)
+Next: Hamilton Monte Carlo since you can do big jumps if you can get derivative (dual numbers? or numeric derivatives?)  https://en.wikipedia.org/wiki/Hamiltonian_Monte_Carlo
 Next: check out gibbs sampling?
 
 
- */
+
+
+
+
+
+
+
+
+
+
+===================================== LANDFILL =====================================
+
+* if function goes negative, I don't think it ever chooses probability values there.
+ * yeah. it makes the probability of taking the new point be effectively zero, because the if case can never be true.
+* I think clamping biases things. maybe makes it not symetric? i dunno.
+ * yeah. it moves it to the end. It should just make it not move at all. That's why having the function return 0 out of range works.
+
+  * you have to tune how fast you move x around.
+ * could imagine making it smaller over time. simulated annealing style. cooling rate another hyper parameter though.
+ * random walk doesn't have to be gaussian but it commonly is.
+* Burn in / get to 0.234 acceptance rate by tuning sigma
+ * didn't play with step size a whole lot
+ * tried briefly to auto-tune sigma but couldn't reliably get it to be close & not infinite loop
+
+* show the value of a good initial guess, by showing convergence with a good vs bad guess.
+ * i guess it depends on step size too...
+
+*/
