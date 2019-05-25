@@ -145,7 +145,7 @@ float CalculateNormalizationConstant(const FUNCTION& function, const Histogram<N
     }
 
     // the estimate of the normalization constant is D / C
-    // D is the integration of the un-normalized pdf for that one histogram bucket.
+    // D is the integration of the un normalized pdf for that one histogram bucket.
     // C is the integration of the normalized pdf for that one histogram bucket.
     return D / C;
 }
@@ -271,8 +271,6 @@ void Report(
         fclose(file);
     }
 
-    // TODO: finish and verify this
-
     // write out a histogram file
     {
         FILE* file = nullptr;
@@ -284,7 +282,7 @@ void Report(
         }
         for (int i = 0; i < N - 1; ++i)
             fprintf(file, ",\"Bucket Value %i\"", i);
-        fprintf(file, ",\"Histogram Value\",\"Normalized Histogram Value\",\"Count\",\"Percentage\",\n");
+        fprintf(file, ",\"Function Value\",\"Normalized Function Value\",\"Count\",\"Percentage\",\n");
 
         // find out what the normalization constant is of the real function for the histogram buckets
         float normalizationConstant = 0.0f;
@@ -295,7 +293,7 @@ void Report(
             TSample<N - 1> functionInput;
             for (int i = 0; i < N - 1; ++i)
             {
-                float percent = (float(indices[i]) + 0.5f) / float(histogram.m_numBucketsPerAxis - 1);
+                float percent = (float(indices[i]) + 0.5f) / float(histogram.m_numBucketsPerAxis);
                 functionInput[i] = sampleMin[i] + percent * (sampleMax[i] - sampleMin[i]);
             }
             float functionValue = std::max(function(functionInput), 0.0f);
@@ -311,7 +309,7 @@ void Report(
             TSample<N - 1> functionInput;
             for (int i = 0; i < N - 1; ++i)
             {
-                float percent = (float(indices[i]) + 0.5f) / float(histogram.m_numBucketsPerAxis - 1);
+                float percent = (float(indices[i]) + 0.5f) / float(histogram.m_numBucketsPerAxis);
                 functionInput[i] = sampleMin[i] + percent * (sampleMax[i] - sampleMin[i]);
             }
             float functionValue = std::max(function(functionInput), 0.0f);
@@ -418,12 +416,6 @@ int main(int argc, char** argv)
 }
 
 /*
-
-TODO:
-
-- use this for sampling from a function as if it were a PDF.
- - maybe a couple 1d examples, and maybe a 2d example?
- - could use STB to show data. or just use excel.
 
  * excel can do 3d histograms. can open office?
 
