@@ -192,94 +192,6 @@ void MetropolisMCMC(const FUNCTION& function, const TSample<N-1>& start, float s
     }
 }
 
-// TODO: get rid of this function
-template <typename FUNCTION>
-void Report(
-    const FUNCTION& function,
-    size_t histogramBucketCount,
-    size_t integrationHistogramBucketCount,
-    size_t sampleCountNormalizationConstant,
-    std::vector<std::array<float, 2>>& samples,
-    const char* samplesFileName,
-    const char* histogramFileName
-)
-{
-    // calculate the min and max x and y of the samples
-    float xmin = samples[0][0];
-    float xmax = samples[0][0];
-    float ymin = samples[0][1];
-    float ymax = samples[0][1];
-    for (const std::array<float, 2>& s : samples)
-    {
-        xmin = std::min(xmin, s[0]);
-        xmax = std::max(xmax, s[0]);
-        ymin = std::min(ymin, s[1]);
-        ymax = std::max(ymax, s[1]);
-    }
-
-    // calculate the normalization constant so we can estimate the integral
-    // Use a different histogram with fewer larger buckets to make the MCMC part of the estimate more accurate
-    size_t sampleCount = samples.size();
-    Histogram<1> histogram2({ xmin }, { xmax }, integrationHistogramBucketCount);
-    for (const std::array<float, 2>& s : samples)
-        histogram2.AddValue({ s[0] });
-    float normalizationConstant = CalculateNormalizationConstant(function, histogram2, sampleCount, sampleCountNormalizationConstant);
-
-    // Make a histogram of the x axis to show that the samples follow the shape of the function.
-    // In other words, show that the function was used as a PDF, which described the probabilities of each possible value.
-    Histogram<1> histogram({ xmin }, { xmax }, histogramBucketCount);
-    for (const std::array<float, 2>& s : samples)
-        histogram.AddValue({ s[0] });
-
-    // Write out the sample data, while also calculating the expected value at each step.
-    // The final value of expected value should be taken as the most accurate.
-    float expectedValue = 0.0f;
-    {
-        FILE* file = nullptr;
-        fopen_s(&file, samplesFileName, "w+t");
-        fprintf(file, "\"index\",\"x\",\"y\",\"expected value\"\n");
-        for (size_t sampleIndex = 0; sampleIndex < sampleCount; ++sampleIndex)
-        {
-            expectedValue = Lerp(expectedValue, samples[sampleIndex][0], 1.0f / float(sampleIndex + 1));  // incrementally averaging: https://blog.demofox.org/2016/08/23/incremental-averaging/
-            fprintf(file, "\"%zu\",\"%f\",\"%f\",\"%f\"\n", sampleIndex, samples[sampleIndex][0], samples[sampleIndex][1], expectedValue);
-        }
-
-        fclose(file);
-    }
-
-    // write out a histogram file
-    {
-        FILE* file = nullptr;
-        fopen_s(&file, histogramFileName, "w+t");
-        fprintf(file, "\"Bucket Index\",\"Bucket X\",\"Actual Y\",\"Normalized Y\",\"Count\",\"Percentage\",\n");
-
-        // find out what the normalization constant is of the real function for the histogram buckets
-        float normalizationConstant = 0.0f;
-        for (size_t index = 0; index < histogram.m_numBucketsPerAxis; ++index)
-        {
-            float percent = (float(index) + 0.5f) / float(histogram.m_numBucketsPerAxis - 1);
-            float x = xmin + percent * (xmax - xmin);
-            float y = std::max(function({ x }), 0.0f);
-            normalizationConstant += y;
-        }
-
-        // print out the histogram data
-        for (size_t index = 0; index < histogram.m_numBucketsPerAxis; ++index)
-        {
-            float percent = (float(index) + 0.5f) / float(histogram.m_numBucketsPerAxis - 1);
-            float x = xmin + percent * (xmax - xmin);
-            float y = std::max(function({ x }), 0.0f);
-
-            fprintf(file, "\"%zu\",\"%f\",\"%f\",\"%f\",\"%zu\",\"%f\",\n", index, x, y, y / normalizationConstant, histogram.m_counts[index], float(histogram.m_counts[index]) / float(sampleCount));
-        }
-
-        fclose(file);
-    }
-
-    // show results
-    printf("%zu samples taken\nexpected value = %f\nIntegration = %f\n\n", sampleCount, expectedValue, normalizationConstant);
-}
-
 template <typename FUNCTION, size_t N>
 void Report(
     const FUNCTION& function,
@@ -508,8 +420,6 @@ int main(int argc, char** argv)
 /*
 
 TODO:
-
-* maybe could merge the report functions into 1 again. you are almost there. Need an N dimensional sampler though... could use white noise instead of sobol i guess.
 
 - use this for sampling from a function as if it were a PDF.
  - maybe a couple 1d examples, and maybe a 2d example?
